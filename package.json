@@ -1,0 +1,12 @@
+{
+  "name": "boards-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "check:upgrade": "node check.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.2"
+  }
+}
