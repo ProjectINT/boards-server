@@ -1,0 +1,141 @@
+# boards-server
+
+WebSocket-сервис, который владеет состоянием доски Excalidraw в [Egesto](https://egesto.ru): принимает правки участников, сливает их, рассылает остальным и сохраняет сцену в Supabase Storage.
+
+Репозиторий отдельный от сайта (`ProjectINT/egeapp`) намеренно: dockhost собирает сервис прямо из корневого `Dockerfile`, как собирает сайт, без GitHub Actions и без реестра образов. Обоснование и полный план — в репозитории сайта:
+
+- `docs/PLAN_BOARD_SERVER_REPO_2026-09-10.md` — два репозитория, сборка, этапы, риски;
+- `docs_archive/PLAN_BOARD_SERVER_2026-09-09.md` — архитектура, модель данных, протокол, авторизация, хранение;
+- `docs/CLASSROOM.md` — кабинет занятия, где живёт доска.
+
+**Статус:** этап 1 «Каркас». Кода ещё нет.
+
+## Зачем
+
+Сейчас доска синхронизируется широковещательными сообщениями Supabase Realtime без подтверждений, а каждый участник раз в пару секунд пишет всю сцену целиком в таблицу `board_snapshots`. Отсюда три беды: отброшенное Realtime сообщение не повторяется никогда («артефакт виден только у автора»); сотни полных перезаписей документа за занятие идут в ту же базу, где лежат брони и платежи; и нет стороны, которая знает, что у кого есть, — значит негде реализовать пересинхронизацию при входе.
+
+Сервис — это архитектура `excalidraw-room` плюс персистентность и подтверждения: авторитетная сцена на сервере, дельты с `ack`, реконнект с вектором состояния, запись в Storage по политике, а не на каждое движение.
+
+## Архитектура
+
+```
+ браузер A                     boards-server                      браузер B
+┌──────────────┐    WSS    ┌──────────────────────┐    WSS    ┌──────────────┐
+│ Excalidraw   │◄─────────►│  Room "board:<id>"   │◄─────────►│ Excalidraw   │
+│ outbox,      │ hello/    │   doc: элементы,     │ delta/ack │ outbox,      │
+│ вектор       │ delta/ack │   файлы, appState    │ pointer   │ вектор       │
+└──────────────┘ pointer   └──────────┬───────────┘           └──────────────┘
+                                      │ flush (gzip)
+                              Supabase Storage: board-docs/<boardId>/doc.json.gz
+```
+
+Ключевые решения реализации:
+
+- **Документ на буферах.** Сервер не разбирает содержимое элементов — ему нужны только `id`, `version`, `versionNonce`, `isDeleted`. В памяти элемент живёт как `Buffer` с сырым JSON, исходящие кадры собираются конкатенацией, а не `JSON.stringify`. На 100 досках это 60–90 МБ вместо 150–250 МБ.
+- **Комната — чистая функция.** `step(room, event, now) → { room, effects }`: ни сокетов, ни таймеров, ни `Date.now()` внутри. Транспорт и таймеры — тонкая прослойка снаружи. Благодаря этому потери, дубли и реконнекты воспроизводятся в тесте детерминированно.
+- **Слияние не меняется.** Элемент Excalidraw — LWW-регистр с ключом `(version, versionNonce)`; побеждает больший `version`, при равенстве — больший `versionNonce`. Те же правила, что сегодня на клиенте (см. «Общий код» ниже).
+
+## Протокол
+
+Текстовые JSON-кадры по WebSocket, одно соединение — одна доска, версия протокола в `hello` (`v: 1`).
+
+| Клиент → сервер | Поля |
+|---|---|
+| `hello` | `token`, `vector`, `files`, `outbox` — первый кадр; вектор пуст при первом входе, при реконнекте содержит то, что у клиента есть, плюс неподтверждённое |
+| `delta` | `cseq`, `elements`, `files` |
+| `pointer` | `x`, `y` |
+| `appState` | `theme?`, `font?`, `background?` |
+| `ping` | — |
+
+| Сервер → клиент | Поля |
+|---|---|
+| `welcome` | `seq`, `role`, `elements`, `files`, `appState`, `members` — **разница** относительно присланного вектора |
+| `delta` | `seq`, `from`, `elements`, `files` |
+| `ack` / `reject` | `cseq`, `seq` / `cseq`, `reason` (`view-only`, `too-large`, `bad-file`, `bad-version`) |
+| `pointer` / `presence` | чужой курсор / список участников |
+| `error` | `token-expired`, `forbidden`, `room-closing` — затем сокет закрывается |
+
+Ограничения: кадр ≤ 1 МБ, inline-файл ≤ 128 КБ dataURL, сцена ≤ 10 МБ, курсор не чаще 30 мс на участника, соединений на пользователя на доску ≤ 4, дельты от роли `view` отклоняются. Бэкпрешер: `bufferedAmount` > 4 МБ — курсоры пропускаем, дельты в очередь; > 16 МБ — закрываем с `1013` (клиент переподключится с вектором и ничего не потеряет).
+
+**Авторизация.** Токен HS256 выдаёт Next.js (`POST /api/board-token`) после проверки прав под RLS: claims `sub`, `board`, `role`, `name`, `exp`, TTL 2 часа, общий секрет `BOARD_SERVER_SECRET`. Сервис проверяет подпись и срок и в Postgres не ходит.
+
+**Хранение.** Сцена пишется в частный бакет `board-docs` gzip'ом: через 5 с тишины, при непрерывном рисовании не реже раза в 30 с, обязательно при опустевшей комнате и на `SIGTERM`. Доска без объекта в Storage один раз импортируется из старой таблицы `board_snapshots` через PostgREST.
+
+## Стек
+
+Node 24 (alpine), TypeScript со сборкой `tsc` в `dist/`. Прод-зависимостей четыре: `ws` (без `perMessageDeflate` — он держит контекст на соединение и фрагментирует память), `jose` (HS256), `pino` (JSON в stdout, его собирает dockhost), `prom-client`. HTTP к Supabase — встроенным `fetch`, gzip — `node:zlib`. Тесты — `vitest` с `globals: true`.
+
+## Структура
+
+```
+Dockerfile              # корневой, его собирает dockhost
+shared.lock.json        # sha256 файлов, скопированных из egeapp
+scripts/
+  sync-shared.mjs       # обновить копию из egeapp
+  check-shared.mjs      # CI: сверка с egeapp@main
+  dev-token.mjs         # подписать токен доски без запуска Next.js
+  load.mjs              # нагрузочный прогон
+src/
+  index.ts              # config → http → ws → сигналы
+  config.ts log.ts metrics.ts auth.ts http.ts transport.ts rooms.ts
+  core/                 # types.ts, doc.ts, room.ts (чистая step())
+  storage/              # objects.ts (Storage), legacy.ts (board_snapshots), boards.ts
+  shared/               # ⚠ копия из egeapp, править нельзя
+test/                   # protocol, doc, auth, storage, integration
+```
+
+## Общий код с сайтом
+
+Правила слияния живут в двух репозиториях копией, байт в байт:
+
+| Источник (egeapp) | Здесь |
+|---|---|
+| `lib/boardSync.ts` | `src/shared/boardSync.ts` |
+| `lib/__tests__/boardSync.test.ts` | `src/shared/__tests__/boardSync.test.ts` |
+
+Источник истины — egeapp, направление одно. **Править `src/shared/` руками запрещено** — только `npm run sync:shared`. Раскладка выбрана так, чтобы импорт `../boardSync` внутри теста резолвился без правок; поэтому `vitest` и запускается с `globals: true` — файл написан для jest и копируется как есть.
+
+Расхождение ловит job `shared` в CI: он читает оба файла из `egeapp@main` через GitHub API (нужен read-only PAT в секретах) и сверяет sha256. Job стоит и на расписании раз в сутки — правку сделают в egeapp, а сюда месяц не будет пушей.
+
+## Переменные окружения
+
+| Переменная | Обязательна | Назначение |
+|---|---|---|
+| `BOARD_SERVER_SECRET` | да | Проверка подписи токенов доски |
+| `SUPABASE_URL` | да | Storage и PostgREST |
+| `SUPABASE_SERVICE_ROLE_KEY` | да | Он же |
+| `ALLOWED_ORIGINS` | да | `https://egesto.ru`, через запятую |
+| `BOARD_DOCS_BUCKET` | нет, `board-docs` | — |
+| `PORT` | нет, `8080` | — |
+| `LOG_LEVEL` | нет, `info` | — |
+| `ROOM_IDLE_MS` | нет, `300000` | Выселение пустой комнаты |
+| `FLUSH_QUIET_MS` / `FLUSH_MAX_MS` | нет, `5000` / `30000` | Политика записи |
+
+`config.ts` проверяет обязательные при старте и падает с внятным сообщением: сервис без ключа Storage не должен подниматься и принимать правки, которые некуда сохранить.
+
+## Локальная разработка
+
+Чекаут лежит внутри рабочей копии сайта — `~/egeapp/boards-server` — и добавлен в `.gitignore` egeapp: два независимых репозитория в одной папке, `sync:shared` берёт файлы из `..`. Путь можно переопределить переменной `EGEAPP_DIR`.
+
+```bash
+npm run dev          # tsx watch src/index.ts, порт 8080
+npm test             # vitest
+npm run sync:shared  # обновить копию boardSync из egeapp
+npm run test:load    # 100 комнат × 2 клиента × 8 дельт/с × 2 мин
+```
+
+Токен для ручных проверок — `node scripts/dev-token.mjs <boardId> edit`: подписывает claims тем же секретом, дальше можно гонять `wscat`, не поднимая Next.js. Полная связка: в `.env` сайта прописать `NEXT_PUBLIC_BOARD_SERVER_URL=ws://localhost:8080` и тот же `BOARD_SERVER_SECRET`, открыть одну доску в двух вкладках.
+
+Пустая `NEXT_PUBLIC_BOARD_SERVER_URL` на стороне сайта — это и есть фича-флаг: пока она не задана, доска работает по старому пути через Realtime.
+
+## CI
+
+Один workflow, четыре job'а: `types` (`tsc --noEmit`), `test` (`vitest run`), `shared` (сверка с egeapp@main — на пушах, PR и по расписанию), `docker` (`docker build .` без публикации). Деплоя в CI нет: раскатка живёт в панели dockhost, а workflow, притворяющийся деплоем, опаснее его отсутствия.
+
+## Развёртывание
+
+Сервис `board-server` в проекте dockhost, источник — этот репозиторий, ветка `main`, корневой `Dockerfile`, порт `8080/tcp`, старт с 0,5 CPU и 512 МБ. Маршрут: домен `egesto.ru`, путь `/board-ws`, тип «Внутренний» — публичный адрес `wss://egesto.ru/board-ws`. `HEALTHCHECK` — `wget -qO- http://localhost:8080/healthz`.
+
+`stopTimeout` контейнера — **не меньше 30 с**: на `SIGTERM` сервис переводит `readyz` в false, дописывает все грязные комнаты (общий таймаут 20 с) и закрывает сокеты кодом `1012`. Более короткий таймаут убьёт процесс посреди flush и потеряет правки последних секунд.
+
+Эндпоинты: `/healthz` (живость), `/readyz` (готовность, false при завершении), `/metrics` (prom-client, там же `board_tombstone_bytes` — по нему видно, нужно ли сжатие надгробий).
