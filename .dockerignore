@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+dist
+test
+scripts
+shared.lock.json
+vitest.config.ts
+README.md
+*.log
+.env
+.env.local

@@ -1,12 +1,30 @@
 {
   "name": "boards-server",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "start": "node server.mjs",
-    "check:upgrade": "node check.mjs"
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "sync:shared": "node scripts/sync-shared.mjs",
+    "check:shared": "node scripts/check-shared.mjs"
   },
   "dependencies": {
-    "ws": "^8.18.2"
+    "jose": "^6.1.0",
+    "pino": "^9.13.1",
+    "prom-client": "^15.1.3",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2",
+    "vitest": "^5.0.1"
   }
 }

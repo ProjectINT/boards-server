@@ -1,0 +1,70 @@
+# Проверки кода. Деплоя здесь НЕТ и быть не должно: раскатка живёт в панели
+# dockhost, которая собирает сервис из этого репозитория сама. Workflow,
+# притворяющийся деплоем, опаснее его отсутствия — на сайте такой уже был и
+# однажды чуть не поднял контейнер без половины переменных окружения
+# (см. шапку .github/workflows/deploy.yml в egeapp).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Раз в сутки — ради job `shared`: правку правил слияния сделают в egeapp, а
+    # сюда месяц не будет пушей, и расхождение заметил бы только прод.
+    - cron: '17 4 * * *'
+
+jobs:
+  types:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Совпадает с базовым образом Dockerfile (node:24-alpine).
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  shared:
+    # Сверка копии правил слияния с egeapp@main. Красный job здесь означает, что
+    # клиент и сервер разошлись бы в winsOver — а это молча разъезжающиеся доски.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # npm ci не нужен: скрипт ходит в GitHub API встроенным fetch и считает
+      # sha256 через node:crypto.
+      - run: node scripts/check-shared.mjs
+        env:
+          # Read-only PAT с `contents: read` на приватный ProjectINT/egeapp.
+          # Штатный GITHUB_TOKEN здесь не годится: он даёт права только на этот
+          # репозиторий.
+          GITHUB_TOKEN: ${{ secrets.EGEAPP_READ_TOKEN }}
+
+  docker:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Без публикации: сломанный Dockerfile иначе обнаружится в панели
+      # dockhost, в момент, когда доска уже нужна.
+      - run: docker build .

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  // Копия jest-теста из egeapp импортирует `../boardSync` без расширения, а
+  // nodenext такой импорт не разрешает. Править копию нельзя (§2 плана
+  // репозитория), поэтому тест исключён из сборки: его запускает vitest, где
+  // разрешение идёт через esbuild. Сам boardSync.ts компилируется как обычно.
+  "exclude": ["src/shared/__tests__"]
+}
