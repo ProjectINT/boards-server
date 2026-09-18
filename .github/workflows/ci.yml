@@ -76,8 +76,11 @@ jobs:
         env:
           # Read-only PAT с `contents: read` на приватный ProjectINT/egeapp.
           # Штатный GITHUB_TOKEN здесь не годится: он даёт права только на этот
-          # репозиторий.
-          GITHUB_TOKEN: ${{ secrets.EGEAPP_READ_TOKEN }}
+          # репозиторий. Имя переменной совпадает с именем секрета намеренно:
+          # имена секретов с префиксом GITHUB_ GitHub заводить запрещает, и два
+          # разных имени для одного значения уже привели к попытке завести
+          # секрет `GITHUB_TOKEN`.
+          EGEAPP_READ_TOKEN: ${{ secrets.EGEAPP_READ_TOKEN }}
 
   docker:
     if: github.event_name != 'schedule'

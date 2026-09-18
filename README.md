@@ -142,7 +142,7 @@ npm test              # vitest
 npm run test:seeds    # 200 seed'ов модели доставки (test/protocol.test.ts), в CI по расписанию
 npm run check:types   # типы вместе с test/ (основной tsconfig собирает только src/)
 npm run sync:shared   # обновить копию boardSync из egeapp
-npm run check:shared  # сверить копию с egeapp@main (нужен GITHUB_TOKEN)
+npm run check:shared  # сверить копию с egeapp@main (нужен EGEAPP_READ_TOKEN)
 npm run test:load     # 100 комнат × 2 клиента × 8 дельт/с × 2 мин
 ```
 

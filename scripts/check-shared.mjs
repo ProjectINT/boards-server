@@ -7,7 +7,7 @@
 // записи в shared.lock.json: испорченная руками копия должна ловиться даже
 // тогда, когда lock не трогали.
 //
-// Нужен read-only PAT с правом `contents: read` в GITHUB_TOKEN — репозиторий
+// Нужен read-only PAT с правом `contents: read` в EGEAPP_READ_TOKEN — репозиторий
 // сайта приватный. В CI это отдельный job, он же ходит по расписанию раз в
 // сутки: правку сделают в egeapp, а сюда месяц не будет пушей.
 
@@ -39,9 +39,9 @@ async function fetchFromGitHub(path, token) {
   return Buffer.from(await response.arrayBuffer())
 }
 
-const token = process.env.GITHUB_TOKEN
+const token = process.env.EGEAPP_READ_TOKEN
 if (!token) {
-  console.error('нет GITHUB_TOKEN: нужен read-only PAT с доступом к ' + SOURCE_REPO)
+  console.error('нет EGEAPP_READ_TOKEN: нужен read-only PAT с доступом к ' + SOURCE_REPO)
   process.exit(1)
 }
 
