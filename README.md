@@ -63,7 +63,7 @@ WebSocket-сервис, который владеет состоянием до�
 
 ## Стек
 
-Node 24 (alpine), TypeScript со сборкой `tsc` в `dist/`. Прод-зависимостей четыре: `ws` (без `perMessageDeflate` — он держит контекст на соединение и фрагментирует память), `jose` (HS256), `pino` (JSON в stdout, его собирает dockhost), `prom-client`. HTTP к Supabase — встроенным `fetch`, gzip — `node:zlib`. Тесты — `vitest` с `globals: true`.
+Node 24 (alpine), TypeScript со сборкой `tsc` в `dist/`. Прод-зависимостей четыре: `ws` (без `perMessageDeflate` — он держит контекст на соединение и фрагментирует память), `jose` (HS256), `pino` (JSON в stdout, его собирает dockhost), `@prometheus-io/client` (бывший `prom-client`). HTTP к Supabase — встроенным `fetch`, gzip — `node:zlib`. Тесты — `vitest` с `globals: true`.
 
 ## Структура
 
@@ -142,4 +142,4 @@ npm run test:load     # 100 комнат × 2 клиента × 8 дельт/с 
 
 `stopTimeout` контейнера — **не меньше 30 с**: на `SIGTERM` сервис переводит `readyz` в false, дописывает все грязные комнаты (общий таймаут 20 с) и закрывает сокеты кодом `1012`. Более короткий таймаут убьёт процесс посреди flush и потеряет правки последних секунд.
 
-Эндпоинты: `/healthz` (живость), `/readyz` (готовность, 503 при завершении), `/metrics` (prom-client, там же `board_tombstone_bytes` — по нему видно, нужно ли сжатие надгробий). Маршрут dockhost отдаёт путь контейнеру как есть, префикс не срезая, поэтому снаружи они живут по `/board-ws/healthz` и так далее; сервер принимает оба написания, а `HEALTHCHECK` внутри контейнера ходит на `/healthz`.
+Эндпоинты: `/healthz` (живость), `/readyz` (готовность, 503 при завершении), `/metrics` (клиент Prometheus, там же `board_tombstone_bytes` — по нему видно, нужно ли сжатие надгробий). Маршрут dockhost отдаёт путь контейнеру как есть, префикс не срезая, поэтому снаружи они живут по `/board-ws/healthz` и так далее; сервер принимает оба написания, а `HEALTHCHECK` внутри контейнера ходит на `/healthz`.

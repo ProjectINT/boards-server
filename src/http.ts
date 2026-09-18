@@ -31,7 +31,7 @@ export function routeOf(url: string | undefined): string {
 }
 
 function send(res: ServerResponse, status: number, body: string, contentType = 'text/plain'): void {
-  // prom-client отдаёт свой content-type уже с charset — второй раз его
+  // Клиент Prometheus отдаёт свой content-type уже с charset — второй раз его
   // дописывать нельзя, заголовок получится некорректным.
   const type = contentType.includes('charset=') ? contentType : `${contentType}; charset=utf-8`
 
