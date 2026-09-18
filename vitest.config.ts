@@ -8,5 +8,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    // Интеграционный тест поднимает настоящий сервис, и его лог в stdout
+    // забивает вывод прогона: половина тестов там — отказы, каждый со своей
+    // строкой. Уровень можно вернуть на время разбора: LOG_LEVEL=debug npm test.
+    env: { LOG_LEVEL: process.env.LOG_LEVEL ?? 'silent' },
   },
 })

@@ -1,0 +1,14 @@
+{
+  // Типы тестов. Основной tsconfig.json собирает только `src` (`rootDir`,
+  // `outDir`), и `test/` не проверяется ничем: vitest гоняет их через esbuild,
+  // а он типы не смотрит. Отдельный конфиг без выхлопа закрывает эту дыру —
+  // главный тест проекта живёт именно в `test/`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "test"],
+  // Копия jest-теста из egeapp: импорт без расширения, править нельзя.
+  "exclude": ["src/shared/__tests__"]
+}

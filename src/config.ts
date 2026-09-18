@@ -12,6 +12,8 @@ export interface Config {
   /** Источники, которым разрешён апгрейд сокета. Проверку делает Ф4. */
   allowedOrigins: string[]
   boardDocsBucket: string
+  /** Публичный бакет для картинок, вынутых из наследных снимков (§8). */
+  boardImportsBucket: string
   port: number
   logLevel: string
   /** Выселение пустой комнаты. */
@@ -82,6 +84,10 @@ export function loadConfig(env: Env = process.env): Config {
     supabaseServiceRoleKey,
     allowedOrigins,
     boardDocsBucket: env.BOARD_DOCS_BUCKET?.trim() || 'board-docs',
+    // Тот же бакет, куда кладёт картинки сам кабинет (`uploadImage` в
+    // `useBoardEngine.ts`): импортированная доска должна показывать их так же,
+    // как показывает нарисованная сегодня.
+    boardImportsBucket: env.BOARD_IMPORTS_BUCKET?.trim() || 'egesto-public',
     port: number('PORT', 8080),
     logLevel,
     roomIdleMs: number('ROOM_IDLE_MS', 300_000),

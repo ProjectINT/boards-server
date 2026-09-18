@@ -41,10 +41,18 @@ export interface Claims {
 }
 
 /**
- * Что у клиента уже есть: id элемента → его version. Файлы едут отдельным
- * списком id — они неизменяемы, версия им не нужна.
+ * Что у клиента уже есть: id элемента → его `version` либо пара
+ * `[version, versionNonce]`. Файлы едут отдельным списком id — они неизменяемы,
+ * версия им не нужна.
+ *
+ * Пара нужна из-за правила слияния: при равном `version` побеждает больший
+ * `versionNonce`, и по одному номеру версии такую победу не видно. Клиент,
+ * который проспал рассылку победителя и переподключился, назвал бы ту же
+ * `version` — и разошёлся бы с комнатой навсегда (`diff` в doc.ts). Голое
+ * число остаётся допустимым и означает «нонс не назван»: сверка тогда идёт
+ * только по версии, как раньше.
  */
-export type StateVector = Record<ElementId, number>
+export type StateVector = Record<ElementId, number | [number, number]>
 
 /** Файл сцены: `dataURL` для inline (≤ 128 КБ) либо `url` для внешнего. */
 export interface FileRef {
@@ -226,6 +234,18 @@ export interface PresenceFrame {
   members: MemberInfo[]
 }
 
+/**
+ * Изменившиеся настройки доски. В таблице osn§6.2 такого кадра нет — там
+ * `appState` едет только в `welcome`, и получается, что вошедший настройки
+ * видит, а сидящий в комнате про их смену не узнаёт до следующего входа.
+ * Форма та же, что у поля `appState` в `welcome` (термины сцены Excalidraw, не
+ * UI), вместе с `updatedAt`: по нему получатель делает тот же LWW, что сервер.
+ */
+export interface ServerAppStateFrame {
+  t: 'appState'
+  appState: DocAppState
+}
+
 export type ErrorCode = 'token-expired' | 'forbidden' | 'room-closing'
 
 /** После `error` сервер закрывает сокет соответствующим кодом. */
@@ -246,5 +266,6 @@ export type ServerFrame =
   | RejectFrame
   | ServerPointerFrame
   | PresenceFrame
+  | ServerAppStateFrame
   | ErrorFrame
   | PongFrame

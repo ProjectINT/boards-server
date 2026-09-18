@@ -11,6 +11,9 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
+    "test:seeds": "PROTOCOL_SEEDS=200 vitest run test/protocol.test.ts",
+    "test:load": "node scripts/load.mjs",
+    "check:types": "tsc -p tsconfig.test.json",
     "sync:shared": "node scripts/sync-shared.mjs",
     "check:shared": "node scripts/check-shared.mjs"
   },

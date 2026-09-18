@@ -12,8 +12,9 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Раз в сутки — ради job `shared`: правку правил слияния сделают в egeapp, а
-    # сюда месяц не будет пушей, и расхождение заметил бы только прод.
+    # Раз в сутки — ради job'ов `shared` и `seeds`: правку правил слияния сделают
+    # в egeapp, а сюда месяц не будет пушей, и расхождение заметил бы только
+    # прод; двести seed'ов протокола за минуты на пуше платить не хочется.
     - cron: '17 4 * * *'
 
 jobs:
@@ -29,6 +30,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx tsc --noEmit
+      # Отдельным конфигом, потому что основной собирает только src/: иначе
+      # типы в test/ не проверял бы никто — vitest гоняет их через esbuild.
+      - run: npm run check:types
 
   test:
     if: github.event_name != 'schedule'
@@ -41,6 +45,21 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm test
+
+  seeds:
+    # Двести seed'ов модели доставки (test/protocol.test.ts). В обычном прогоне
+    # seed один: 200 штук — это минуты, и держать их на каждом пуше значит
+    # платить за них каждый раз, а ловят они редкое, накопленное.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:seeds
 
   shared:
     # Сверка копии правил слияния с egeapp@main. Красный job здесь означает, что
